@@ -6,7 +6,7 @@
 
 Runs **entirely on your device** — in the browser or in Python. No server, no API keys, no uploads.
 
-🌐 **[Try it in your browser](https://<your-username>.github.io/<repo>/)** · 💻 runs offline · 🐍 plain PyTorch
+🌐 **[Try it in your browser](https://hariomlohardev.github.io/shakespeare-gpt/)** · 💻 runs offline · 🐍 plain PyTorch
 
 </div>
 
@@ -65,7 +65,7 @@ This repo is Pages-ready: `docs/index.html` + `docs/model.bin`.
 1. Push to GitHub.
 2. Go to **Settings → Pages → Build and deployment → Deploy from a branch**,
    choose your branch and the **`/docs`** folder, then Save.
-3. Open `https://<your-username>.github.io/<repo>/`, type a prompt, press **Generate**.
+3. Open `https://hariomlohardev.github.io/shakespeare-gpt/`, type a prompt, press **Generate**.
 
 Everything runs in the page — the weights are fetched once from your own repo, then generation happens on-device.
 

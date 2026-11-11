@@ -293,13 +293,16 @@ if (typeof document !== "undefined") (() => {
 
   $("loadUrl").addEventListener("click", async () => {
     const url = $("url").value.trim(); if (!url) return;
+    const MB = b => (b / 1048576).toFixed(1) + " MB";
     try {
-      status("Downloading…"); bar(0);
+      status("Downloading… 0%"); bar(0);
       const r = await fetch(url); if (!r.ok) throw new Error("HTTP " + r.status);
       const total = +r.headers.get("content-length") || 0, rd = r.body.getReader(), parts = []; let got = 0;
       for (;;) {
         const { done, value } = await rd.read(); if (done) break;
-        parts.push(value); got += value.length; if (total) bar(got / total);
+        parts.push(value); got += value.length;
+        if (total) { bar(got / total); status(`Downloading… ${Math.floor(got / total * 100)}% (${MB(got)} / ${MB(total)})`); }
+        else status(`Downloading… ${MB(got)}`);
       }
       const all = new Uint8Array(got); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
       fromBuffer(all.buffer);
@@ -335,23 +338,69 @@ if (typeof document !== "undefined") (() => {
   $("stop").addEventListener("click", () => stopFlag = true);
   $("copy").addEventListener("click", () => navigator.clipboard && navigator.clipboard.writeText($("out").textContent));
 
-  // ---- boot: embedded weights > ./model.bin (GitHub Pages) > manual loader ----
+  // ---- boot: embedded weights > ./model.bin (parallel range download) > manual loader ----
   const emb = $("model-data").textContent.trim();
   if (emb && emb !== "__MODEL_B64__") {
     status("Loading the embedded model…"); bar(0.3);
     setTimeout(() => fromBuffer(b64ToBuffer(emb)), 30);
   } else {
     (async () => {
-      try {
-        status("Loading model.bin…"); bar(0.2);
-        const r = await fetch("model.bin", { cache: "force-cache" });
+      const MB = b => (b / 1048576).toFixed(1) + " MB";
+      const show = (got, total) => {
+        status(`Loading model.bin… ${Math.floor(got / total * 100)}% (${MB(got)} / ${MB(total)})`);
+        bar(got / total);
+      };
+      async function readAll(resp, onChunk) {          // stream a response into one Uint8Array
+        const rd = resp.body.getReader(), parts = []; let got = 0;
+        for (;;) {
+          const { done, value } = await rd.read(); if (done) break;
+          parts.push(value); got += value.length; onChunk(value.length);
+        }
+        const all = new Uint8Array(got); let o = 0;
+        for (const p of parts) { all.set(p, o); o += p.length; }
+        return all;
+      }
+      async function single(url, total) {              // one plain download (fallback path)
+        const r = await fetch(url, { cache: "force-cache" });
         if (!r.ok) throw new Error("HTTP " + r.status);
-        const buf = await r.arrayBuffer();
-        bar(0.7);
+        const len = total || +r.headers.get("content-length") || 0;
+        let got = 0; show(0, len || 1);
+        const parts = await readAll(r, n => { got += n; if (len) show(got, len); else status(`Loading model.bin… ${MB(got)}`); });
+        return parts.buffer;
+      }
+      async function parallel(url) {                   // N concurrent Range requests (fastest path)
+        const head = await fetch(url, { method: "HEAD", cache: "force-cache" });
+        if (!head.ok) throw new Error("HTTP " + head.status);
+        const total = +head.headers.get("content-length");
+        if (!total || head.headers.get("accept-ranges") !== "bytes") return single(url, total);
+        const N = Math.min(8, Math.max(2, navigator.hardwareConcurrency || 4));
+        const size = Math.ceil(total / N), chunks = new Array(N);
+        let got = 0; show(0, total);
+        const t0 = performance.now();
+        await Promise.all(chunks.map(async (_, i) => {
+          const s = i * size, e = Math.min(s + size - 1, total - 1);
+          const r = await fetch(url, { headers: { Range: `bytes=${s}-${e}` }, cache: "force-cache" });
+          if (r.status !== 206) throw new Error("range request failed (HTTP " + r.status + ")");
+          chunks[i] = await readAll(r, n => { got += n; show(got, total); });
+        }));
+        const all = new Uint8Array(total); let o = 0;
+        for (const c of chunks) { all.set(c, o); o += c.length; }
+        return { buffer: all.buffer, secs: (performance.now() - t0) / 1000 };
+      }
+      try {
+        const out = await parallel("model.bin");
+        const buf = out.buffer || out;
+        status(out.secs ? `Got ${MB(buf.byteLength)} in ${out.secs.toFixed(1)}s — building model…` : "Building model…");
+        await new Promise(r => setTimeout(r, 20));
         fromBuffer(buf);
       } catch (e) {
-        status("Could not auto-load model.bin (" + e.message + "). Load it below.");
-        $("loader").classList.remove("hide"); bar(null);
+        try {                                          // last resort: plain download (some hosts block HEAD/Range)
+          status("Parallel load failed (" + e.message + ") — retrying single download…");
+          fromBuffer(await single("model.bin"));
+        } catch (e2) {
+          status("Could not auto-load model.bin (" + e2.message + "). Load it below.", "err");
+          $("loader").classList.remove("hide"); bar(null);
+        }
       }
     })();
   }

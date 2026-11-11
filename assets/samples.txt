@@ -1,0 +1,128 @@
+===== prompt='\n' temperature=0.8 =====
+
+
+KING RICHARD II:
+Say they stand it, and so let me read?
+
+QUEEN ELIZABETH:
+My lord, they see his afearward with fall of Gloucester,
+And for their vail to liberty in eight.
+
+KING RICHARD III:
+But I know not, injustice like that thou much play'd!
+
+KING RICHARD III:
+Nay, no; I will do not the tomb that most not do their heart.
+
+First Murderer:
+But let me shall be patient to the son;
+And therefore you come, for I am dead!
+
+Servant:
+But they say, and let it give you him to you tell you so,
+And for his great consent.
+
+Second Murderer:
+But he seems your honour withal.
+
+Second Murderer:
+Stay, he is scorn some stopp'd; let me name, that was
+He had put him alone: if he scarce's countrymen.
+
+First Murderer:
+Remember the gods gives him him like a person
+That want bear the world's coward. I will see him,
+Whose lady is a very come I seem?
+Their heart is a noble thief
+To take of the death noble eyes of lip.
+
+Second Murderer:
+My lord, help you to your humble father;
+But, therefore is not for the gaole
+
+===== prompt='\n' temperature=1.0 =====
+
+Men talk of war. Their cut once whence our
+save, do prize the cause: back of him!
+
+Second Gentleman:
+Where is it in her worth to Warwick?
+
+First Huntsman:
+Do you not return him?
+
+Second Murderer:
+In this lamentation or woes
+guess, and make weep with a settled time for Hereford!
+Then lays his mind to be dread'd with a trraitor?
+
+Second Murderer:
+No, no doubtless is the law on the harsh.
+
+Second Murderer:
+Return, my lord, let not quite your house; you have you all,
+gracious in alligiation of him,
+ere you would not, I think you, even I
+beseech your airs; and you must entreat your
+rights in above war drink for your regnant.
+
+CLARENCE:
+From the man had but light it, give your cousin.
+
+ROMEO:
+I have strikely.
+
+FRIAR LAURENCE:
+But I fly, good madam, I cry you, lady?
+
+Nurse:
+God keep her; I have a bank for Bolingbroke's service,
+Your life a spurs for a side that would change.
+
+JULIET:
+I promise thy minds again; for I am gone;
+In the Roman is too wit shows I fight:
+And, if I hear hence, a half!
+
+===== prompt='ROMEO:' temperature=0.8 =====
+ROMEO:
+My most belly, then I know you to seek the free at him.
+
+SICINIUS:
+Meantimes he will follow him down.
+
+CORIOLANUS:
+He hath proconciled, the country
+Sorrow of you soil it is dead; and in that you at
+The people of the winds that noble gentleman
+And beloved him some perpetually:
+As I was so, sir, and as he hath come to him.
+
+MENENIUS:
+He cannot dismiss him to him, my part, he's a heaven
+To pray him whom in a fury of her man.
+
+First Citizen:
+I thank thee, and he will leave thou speak of further.
+
+SICINIUS:
+A laren things to get the gods.
+
+First Citizen:
+He will be so: he is a place of his noble g
+
+===== prompt='KING RICHARD III:' temperature=0.8 =====
+KING RICHARD III:
+Thou'rt prove to thee this hell arm,
+That we may would have slept up thee to thy wing.
+With all this stand of them, Clifford, whom thou rail kill'd!
+No, for the linenting the father retire
+That true power to the saleep death! what comes but my brother?
+Go not thy tongue be satisfied; what a wife would be least
+In poison that bear itself, thou the king
+And which he speak, his strength and by his torches;
+Commend me to fire, spirit, the widow of jaws,
+But will thou stand out for sorrow a swallength
+Confirmation against out of the night: do you be true,
+If you have opinioner, hark you, let him s
+

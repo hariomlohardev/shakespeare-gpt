@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shakespeare GPT — runs in your browser</title>
+<style>
+  :root{
+    --bg:#16130f; --card:#211c16; --ink:#efe6d4; --muted:#a39882; --line:#3a3226;
+    --accent:#d9a441; --accent-ink:#1a1408; --good:#7fbf7f; --bad:#e07a6a;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f5efe2; --card:#fffaf0; --ink:#2a2217; --muted:#7a6e5a; --line:#ded3bb; --accent:#a8741a; --accent-ink:#fff; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,"Times New Roman",serif}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 18px 60px}
+  h1{margin:0 0 4px;font-size:2rem;letter-spacing:.3px}
+  .sub{color:var(--muted);margin:0 0 22px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:4px;font-family:system-ui,sans-serif}
+  textarea,input[type=text],input[type=number]{
+    width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;
+    padding:9px 11px;font:inherit}
+  textarea{min-height:84px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.95rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:14px 0}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .val{float:right;color:var(--ink)}
+  button{font:600 .95rem system-ui,sans-serif;border:0;border-radius:8px;padding:10px 18px;cursor:pointer;
+    background:var(--accent);color:var(--accent-ink)}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  #status{font:.9rem system-ui,sans-serif;color:var(--muted)}
+  #status.ok{color:var(--good)} #status.err{color:var(--bad)}
+  .bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:8px;display:none}
+  .bar>div{height:100%;width:0;background:var(--accent);transition:width .1s}
+  #out{white-space:pre-wrap;word-wrap:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:.95rem;min-height:220px;margin:0}
+  #out .p{color:var(--accent)}
+  #out .cursor{display:inline-block;width:8px;background:var(--accent);animation:b 1s steps(1) infinite}
+  @keyframes b{50%{opacity:0}}
+  .stats{font:.8rem system-ui,sans-serif;color:var(--muted);margin-top:10px}
+  details summary{cursor:pointer;font:.9rem system-ui,sans-serif;color:var(--muted)}
+  .hide{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎭 Shakespeare GPT</h1>
+  <p class="sub">A character-level transformer running entirely in your browser. No server, no uploads.</p>
+
+  <div class="card">
+    <div id="status">Starting…</div>
+    <div class="bar" id="bar"><div></div></div>
+
+    <div id="loader" class="hide" style="margin-top:14px">
+      <label>This page tries <code>model.bin</code> next to it first. If that fails (e.g. opened via <code>file://</code>), load the weights by hand:</label>
+      <input type="file" id="file" accept=".bin">
+      <label style="margin-top:12px">…or load from a URL</label>
+      <div class="row">
+        <input type="text" id="url" placeholder="https://example.com/model.bin" style="flex:1;min-width:240px">
+        <button class="ghost" id="loadUrl">Load</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" spellcheck="false">ROMEO:</textarea>
+    <div class="grid">
+      <div><label>Characters to generate <span class="val" id="vN">300</span></label>
+        <input type="range" id="n" min="20" max="2000" step="10" value="300"></div>
+      <div><label>Temperature <span class="val" id="vT">0.80</span></label>
+        <input type="range" id="t" min="0.1" max="2" step="0.05" value="0.8"></div>
+      <div><label>Top-k (0 = off) <span class="val" id="vK">0</span></label>
+        <input type="range" id="k" min="0" max="65" step="1" value="0"></div>
+      <div><label>Seed (blank = random)</label>
+        <input type="number" id="seed" placeholder="random"></div>
+    </div>
+    <div class="row">
+      <button id="go" disabled>Generate</button>
+      <button id="stop" class="ghost" disabled>Stop</button>
+      <button id="copy" class="ghost">Copy text</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <pre id="out"></pre>
+    <div class="stats" id="stats"></div>
+  </div>
+</div>
+
+<!-- Weights are injected here by make_web_html.py (base64 of model.bin). Left as-is, you can load a .bin by hand. -->
+<script id="model-data" type="text/plain">__MODEL_B64__</script>
+
+<script>
+// ============================== ENGINE ==============================
+const F16 = (() => {                       // float16 -> float32 lookup table
+  const t = new Float32Array(65536);
+  for (let i = 0; i < 65536; i++) {
+    const s = (i & 0x8000) ? -1 : 1, e = (i >> 10) & 0x1f, m = i & 0x3ff;
+    t[i] = e === 0 ? s * m * 5.960464477539063e-8
+         : e === 31 ? (m ? NaN : s * Infinity)
+         : s * Math.pow(2, e - 15) * (1 + m / 1024);
+  }
+  return t;
+})();
+
+function erf(x){                            // Abramowitz-Stegun 7.1.26, |err| < 1.5e-7
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+const gelu = x => 0.5 * x * (1 + erf(x * 0.7071067811865476));
+
+function parseModel(buf) {
+  const dv = new DataView(buf);
+  const hl = dv.getUint32(0, true);
+  const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hl)));
+  const base = 4 + hl, T = {};
+  for (const t of header.tensors) {
+    const n = t.shape.reduce((a, b) => a * b, 1);
+    const u = new Uint16Array(buf, base + t.offset, n);
+    const f = new Float32Array(n);
+    for (let i = 0; i < n; i++) f[i] = F16[u[i]];
+    T[t.name] = f;
+  }
+  return new GPT(header.config, header.chars, T);
+}
+
+class GPT {
+  constructor(cfg, chars, T) {
+    this.cfg = cfg; this.chars = chars;
+    this.C = cfg.n_embd; this.H = cfg.n_head; this.L = cfg.n_layer; this.V = cfg.vocab_size; this.B = cfg.block_size;
+    this.act = cfg.act === "relu" ? (x => x > 0 ? x : 0) : gelu;
+    const g = (n, opt) => { const t = T[n]; if (!t && !opt) throw new Error("missing tensor " + n); return t || null; };
+    this.wte = g("transformer.wte.weight"); this.wpe = g("transformer.wpe.weight");
+    this.lnfw = g("transformer.ln_f.weight"); this.lnfb = g("transformer.ln_f.bias", 1);
+    this.head = g("lm_head.weight", 1) || this.wte;
+    this.layers = [];
+    for (let l = 0; l < this.L; l++) {
+      const p = `transformer.h.${l}.`;
+      this.layers.push({
+        ln1w: g(p + "ln_1.weight"), ln1b: g(p + "ln_1.bias", 1),
+        attw: g(p + "attn.c_attn.weight"), attb: g(p + "attn.c_attn.bias", 1),
+        prjw: g(p + "attn.c_proj.weight"), prjb: g(p + "attn.c_proj.bias", 1),
+        ln2w: g(p + "ln_2.weight"), ln2b: g(p + "ln_2.bias", 1),
+        fcw: g(p + "mlp.c_fc.weight"), fcb: g(p + "mlp.c_fc.bias", 1),
+        pjw: g(p + "mlp.c_proj.weight"), pjb: g(p + "mlp.c_proj.bias", 1),
+      });
+    }
+    const C = this.C;
+    this.x = new Float32Array(C); this.xn = new Float32Array(C); this.qkv = new Float32Array(3 * C);
+    this.att = new Float32Array(C); this.tmp = new Float32Array(C); this.h = new Float32Array(4 * C);
+    this.sc = new Float32Array(this.B); this.logits = new Float32Array(this.V);
+  }
+  newCache() {
+    return Array.from({ length: this.L }, () => ({ k: new Float32Array(this.B * this.C), v: new Float32Array(this.B * this.C) }));
+  }
+  static ln(x, w, b, out) {
+    const n = x.length; let m = 0, v = 0;
+    for (let i = 0; i < n; i++) m += x[i]; m /= n;
+    for (let i = 0; i < n; i++) { const d = x[i] - m; v += d * d; } v /= n;
+    const r = 1 / Math.sqrt(v + 1e-5);
+    for (let i = 0; i < n; i++) out[i] = (x[i] - m) * r * w[i] + (b ? b[i] : 0);
+  }
+  static lin(W, b, x, out, nOut, nIn) {
+    for (let o = 0; o < nOut; o++) {
+      let s = b ? b[o] : 0; const off = o * nIn;
+      for (let i = 0; i < nIn; i++) s += W[off + i] * x[i];
+      out[o] = s;
+    }
+  }
+  // feed one token at position `pos`; returns logits (valid only if wantLogits)
+  step(tok, pos, cache, wantLogits) {
+    const { C, H, x, xn, qkv, att, tmp, h, sc } = this, hs = C / H, scale = 1 / Math.sqrt(hs);
+    for (let i = 0; i < C; i++) x[i] = this.wte[tok * C + i] + this.wpe[pos * C + i];
+    for (let l = 0; l < this.L; l++) {
+      const L = this.layers[l], kc = cache[l].k, vc = cache[l].v;
+      GPT.ln(x, L.ln1w, L.ln1b, xn);
+      GPT.lin(L.attw, L.attb, xn, qkv, 3 * C, C);
+      for (let i = 0; i < C; i++) { kc[pos * C + i] = qkv[C + i]; vc[pos * C + i] = qkv[2 * C + i]; }
+      for (let hd = 0; hd < H; hd++) {
+        const qo = hd * hs; let mx = -Infinity;
+        for (let t = 0; t <= pos; t++) {
+          let s = 0; const ko = t * C + qo;
+          for (let j = 0; j < hs; j++) s += qkv[qo + j] * kc[ko + j];
+          s *= scale; sc[t] = s; if (s > mx) mx = s;
+        }
+        let den = 0;
+        for (let t = 0; t <= pos; t++) { const e = Math.exp(sc[t] - mx); sc[t] = e; den += e; }
+        for (let j = 0; j < hs; j++) att[qo + j] = 0;
+        for (let t = 0; t <= pos; t++) {
+          const p = sc[t] / den, vo = t * C + qo;
+          for (let j = 0; j < hs; j++) att[qo + j] += p * vc[vo + j];
+        }
+      }
+      GPT.lin(L.prjw, L.prjb, att, tmp, C, C);
+      for (let i = 0; i < C; i++) x[i] += tmp[i];
+      GPT.ln(x, L.ln2w, L.ln2b, xn);
+      GPT.lin(L.fcw, L.fcb, xn, h, 4 * C, C);
+      for (let i = 0; i < 4 * C; i++) h[i] = this.act(h[i]);
+      GPT.lin(L.pjw, L.pjb, h, tmp, C, 4 * C);
+      for (let i = 0; i < C; i++) x[i] += tmp[i];
+    }
+    if (!wantLogits) return null;
+    GPT.ln(x, this.lnfw, this.lnfb, xn);
+    GPT.lin(this.head, null, xn, this.logits, this.V, C);
+    return this.logits;
+  }
+}
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function sample(logits, temp, topk, rng) {
+  const V = logits.length;
+  if (temp <= 0) { let b = 0; for (let i = 1; i < V; i++) if (logits[i] > logits[b]) b = i; return b; }
+  const l = Float32Array.from(logits, v => v / temp);
+  if (topk > 0 && topk < V) {
+    const thr = Float32Array.from(l).sort()[V - topk];
+    for (let i = 0; i < V; i++) if (l[i] < thr) l[i] = -Infinity;
+  }
+  let mx = -Infinity; for (let i = 0; i < V; i++) if (l[i] > mx) mx = l[i];
+  let s = 0; for (let i = 0; i < V; i++) { l[i] = Math.exp(l[i] - mx); s += l[i]; }
+  let r = rng() * s;
+  for (let i = 0; i < V; i++) { r -= l[i]; if (r <= 0) return i; }
+  return V - 1;
+}
+
+async function generate(model, ids, n, temp, topk, rng, onTok, stopFn) {
+  const prefill = (arr, cache) => {
+    let lg = null;
+    for (let i = 0; i < arr.length; i++) lg = model.step(arr[i], i, cache, i === arr.length - 1);
+    return lg;
+  };
+  let ctx = ids.slice(-(model.B - 1));
+  let cache = model.newCache();
+  let logits = prefill(ctx, cache);
+  for (let k = 0; k < n; k++) {
+    if (stopFn()) break;
+    const t = sample(logits, temp, topk, rng);
+    onTok(t); ctx.push(t);
+    if (ctx.length >= model.B) {            // window full: keep the last half and rebuild the cache
+      ctx = ctx.slice(-(model.B >> 1)); cache = model.newCache(); logits = prefill(ctx, cache);
+    } else logits = model.step(t, ctx.length - 1, cache, true);
+    if ((k & 3) === 3) await new Promise(r => setTimeout(r, 0));
+  }
+}
+// ============================== /ENGINE ==============================
+
+// ============================== UI ==============================
+if (typeof document !== "undefined") (() => {
+  const $ = id => document.getElementById(id);
+  const status = (m, c = "") => { $("status").textContent = m; $("status").className = c; };
+  const bar = p => { $("bar").style.display = p == null ? "none" : "block"; if (p != null) $("bar").firstChild.style.width = (p * 100) + "%"; };
+  let model = null, stopFlag = false, running = false;
+
+  for (const [id, out, f] of [["n", "vN", v => v], ["t", "vT", v => (+v).toFixed(2)], ["k", "vK", v => v]])
+    $(id).addEventListener("input", () => $(out).textContent = f($(id).value));
+
+  function setModel(m) {
+    model = m;
+    const c = m.cfg;
+    status(`Model ready: ${(c.params_M || 0).toFixed(2)}M params · ${c.n_layer} layers · ${c.n_head} heads · ${c.n_embd}-dim · context ${c.block_size}`, "ok");
+    $("go").disabled = false; $("loader").classList.add("hide"); bar(null);
+  }
+
+  async function fromBuffer(buf) {
+    status("Building model…"); await new Promise(r => setTimeout(r, 20));
+    try { setModel(parseModel(buf)); }
+    catch (e) { status("Could not read the weights: " + e.message, "err"); $("loader").classList.remove("hide"); bar(null); }
+  }
+
+  function b64ToBuffer(b64) {
+    const bin = atob(b64), n = bin.length, u = new Uint8Array(n);
+    for (let i = 0; i < n; i++) u[i] = bin.charCodeAt(i);
+    return u.buffer;
+  }
+
+  $("file").addEventListener("change", async e => {
+    const f = e.target.files[0]; if (!f) return;
+    status("Reading " + f.name + "…"); fromBuffer(await f.arrayBuffer());
+  });
+
+  $("loadUrl").addEventListener("click", async () => {
+    const url = $("url").value.trim(); if (!url) return;
+    try {
+      status("Downloading…"); bar(0);
+      const r = await fetch(url); if (!r.ok) throw new Error("HTTP " + r.status);
+      const total = +r.headers.get("content-length") || 0, rd = r.body.getReader(), parts = []; let got = 0;
+      for (;;) {
+        const { done, value } = await rd.read(); if (done) break;
+        parts.push(value); got += value.length; if (total) bar(got / total);
+      }
+      const all = new Uint8Array(got); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }
+      fromBuffer(all.buffer);
+    } catch (e) { status("Download failed: " + e.message, "err"); bar(null); }
+  });
+
+  function render(prompt, gen, cursor) {
+    const out = $("out"); out.textContent = "";
+    const p = document.createElement("span"); p.className = "p"; p.textContent = prompt; out.appendChild(p);
+    out.appendChild(document.createTextNode(gen));
+    if (cursor) { const c = document.createElement("span"); c.className = "cursor"; c.textContent = "\u00a0"; out.appendChild(c); }
+  }
+
+  $("go").addEventListener("click", async () => {
+    if (!model || running) return;
+    running = true; stopFlag = false; $("go").disabled = true; $("stop").disabled = false;
+    const prompt = $("prompt").value, stoi = new Map([...model.chars].map((c, i) => [c, i]));
+    let ids = [...prompt].filter(c => stoi.has(c)).map(c => stoi.get(c));
+    if (!ids.length) ids = [stoi.has("\n") ? stoi.get("\n") : 0];
+    const seed = $("seed").value === "" ? (Math.random() * 2 ** 32) >>> 0 : +$("seed").value;
+    let gen = "", count = 0; const t0 = performance.now(), n = +$("n").value;
+    render(prompt, "", true);
+    try {
+      await generate(model, ids, n, +$("t").value, +$("k").value, mulberry32(seed),
+        t => { gen += model.chars[t]; count++; if (count % 3 === 0) render(prompt, gen, true); },
+        () => stopFlag);
+    } catch (e) { status("Generation error: " + e.message, "err"); }
+    render(prompt, gen, false);
+    const s = (performance.now() - t0) / 1000;
+    $("stats").textContent = `${count} characters in ${s.toFixed(1)}s (${(count / s).toFixed(0)} chars/s) · seed ${seed}`;
+    running = false; $("go").disabled = false; $("stop").disabled = true;
+  });
+  $("stop").addEventListener("click", () => stopFlag = true);
+  $("copy").addEventListener("click", () => navigator.clipboard && navigator.clipboard.writeText($("out").textContent));
+
+  // ---- boot: embedded weights > ./model.bin (GitHub Pages) > manual loader ----
+  const emb = $("model-data").textContent.trim();
+  if (emb && emb !== "__MODEL_B64__") {
+    status("Loading the embedded model…"); bar(0.3);
+    setTimeout(() => fromBuffer(b64ToBuffer(emb)), 30);
+  } else {
+    (async () => {
+      try {
+        status("Loading model.bin…"); bar(0.2);
+        const r = await fetch("model.bin", { cache: "force-cache" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const buf = await r.arrayBuffer();
+        bar(0.7);
+        fromBuffer(buf);
+      } catch (e) {
+        status("Could not auto-load model.bin (" + e.message + "). Load it below.");
+        $("loader").classList.remove("hide"); bar(null);
+      }
+    })();
+  }
+})();
+</script>
+</body>
+</html>

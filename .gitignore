@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# Large generated files (kept locally, not committed)
+# The published browser demo uses docs/model.bin (committed on purpose, see below).
+*.zip
+*.log
+model.bin
+shakespeare_gpt_offline.html
+shakespeare-gpt-final.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Keep these weight files on purpose (needed for local run + GitHub Pages):
+#   model/best_ckpt.pt  (~41 MB, Python inference + training checkpoint)
+#   docs/model.bin      (~20 MB, browser demo weights)
+# If your clone gets too big, switch these two to Git LFS or Releases instead.
+!model/best_ckpt.pt
+!docs/model.bin
